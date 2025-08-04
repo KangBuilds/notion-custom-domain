@@ -122,7 +122,11 @@ const customScript = () => {
   });
 };
 
-const customStyle = ``;
+const customStyle = `
+  .notion-topbar > div > div:nth-child(3) > div > div:nth-child(3), .notion-topbar > div > div:nth-child(3) > div > div:nth-child(3) { 
+    display:none !important;
+  }
+`;
 
 function getCustomScript() {
   const js = minify(`(${customScript.toString()})()`).code;
