@@ -4,15 +4,19 @@ import { URL } from 'url';
 import path from 'path';
 import { minify_sync as minify } from 'terser';
 import CleanCSS from 'clean-css';
+
 const {
   PAGE_URL = 'https://7mb.notion.site/Sensei-Wiki-d93e2145a18e452eac2fe6744124e75a',
 } = process.env;
+
 const { origin: pageDomain, pathname: pagePath } = new URL(PAGE_URL);
 const [pageId] = path.basename(pagePath).match(/[^-]*$/) || [''];
+
 // Map start page path to "/". Replacing URL for example:
 // - https://my.notion.site/0123456789abcdef0123456789abcdef -> https://mydomain.com/
 // - /My-Page-0123456789abcdef0123456789abcdef -> /
 // - /my/My-Page-0123456789abcdef0123456789abcdef -> /
+
 declare global {
   interface Window {
     ncd: {
@@ -24,6 +28,7 @@ declare global {
     };
   }
 }
+
 const locationProxy = (pageDomain: string, pageId: string) => {
   window.ncd = {
     _pageId: pageId,
@@ -64,9 +69,7 @@ const locationProxy = (pageDomain: string, pageId: string) => {
     },
   });
 };
-const ncd = minify(
-  `(${locationProxy.toString()})('${pageDomain}', '${pageId}')`,
-).code;
+
 const customScript = () => {
   const replacedUrl = (url: string) => {
     const [, domain] = /^https?:\/\/([^\\/]*)/.exec(url) || ['', ''];
@@ -101,20 +104,42 @@ const customScript = () => {
     },
   });
 };
+
 const customStyle = `
   .notion-topbar > div > div:nth-child(3) > div > div:nth-child(2), .notion-topbar > div > div:nth-child(3) > div > div:nth-child(3) { 
     display:none !important;
   }
 `;
+
+// Cache minified scripts at startup
+const minifiedNcd = (() => {
+  const result = minify(
+    `(${locationProxy.toString()})('${pageDomain}', '${pageId}')`,
+  );
+  return result.code;
+})();
+
+const minifiedCustomScript = (() => {
+  const result = minify(`(${customScript.toString()})()`);
+  return result.code;
+})();
+
+const minifiedCustomStyle = (() => {
+  const css = new CleanCSS().minify(customStyle);
+  return css.styles;
+})();
+
+// Use cached versions
 function getCustomScript() {
-  const js = minify(`(${customScript.toString()})()`).code;
-  return `<script>${js}</script>`;
+  return `<script>${minifiedCustomScript}</script>`;
 }
+
 function getCustomStyle() {
-  const css = new CleanCSS().minify(customStyle).styles;
-  return `<style>${css}</style>`;
+  return `<style>${minifiedCustomStyle}</style>`;
 }
+
 const app = express();
+
 app.use(
   proxy(pageDomain, {
     proxyReqOptDecorator: (proxyReqOpts) => {
@@ -191,7 +216,7 @@ app.use(
         // Assume HTML
         data = data.replace(
           '</head>',
-          `<script>${ncd}</script>${getCustomScript()}${getCustomStyle()}</head>`,
+          `<script>${minifiedNcd}</script>${getCustomScript()}${getCustomStyle()}</head>`,
         );
       }
       data = data
@@ -207,10 +232,12 @@ app.use(
     },
   }),
 );
+
 if (!process.env.VERCEL_REGION && !process.env.NOW_REGION) {
   const port = process.env.PORT || 3000;
   app.listen(port, () =>
     console.log(`Server running at http://localhost:${port}`),
   );
 }
+
 export default app;
