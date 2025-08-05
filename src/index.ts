@@ -4,15 +4,11 @@ import { URL } from 'url';
 import path from 'path';
 import { minify_sync as minify } from 'terser';
 import CleanCSS from 'clean-css';
-
 const {
-  PAGE_URL = 'https://notion.notion.site/Notion-Official-83715d7703ee4b8699b5e659a4712dd8',
-  GA_MEASUREMENT_ID,
+  PAGE_URL = 'https://7mb.notion.site/Sensei-Wiki-d93e2145a18e452eac2fe6744124e75a',
 } = process.env;
-
 const { origin: pageDomain, pathname: pagePath } = new URL(PAGE_URL);
 const [pageId] = path.basename(pagePath).match(/[^-]*$/) || [''];
-
 // Map start page path to "/". Replacing URL for example:
 // - https://my.notion.site/0123456789abcdef0123456789abcdef -> https://mydomain.com/
 // - /My-Page-0123456789abcdef0123456789abcdef -> /
@@ -49,7 +45,6 @@ const locationProxy = (pageDomain: string, pageId: string) => {
       return this._myUrl(location.href);
     },
   };
-
   window.history.pushState = new Proxy(window.history.pushState, {
     apply: function (target, that, [data, unused, url]) {
       return Reflect.apply(target, that, [
@@ -72,19 +67,6 @@ const locationProxy = (pageDomain: string, pageId: string) => {
 const ncd = minify(
   `(${locationProxy.toString()})('${pageDomain}', '${pageId}')`,
 ).code;
-
-const ga = GA_MEASUREMENT_ID
-  ? `<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', '${GA_MEASUREMENT_ID}');
-</script>`
-  : '';
-
 const customScript = () => {
   const replacedUrl = (url: string) => {
     const [, domain] = /^https?:\/\/([^\\/]*)/.exec(url) || ['', ''];
@@ -99,14 +81,12 @@ const customScript = () => {
     }
     return url;
   };
-
   window.fetch = new Proxy(window.fetch, {
     apply: function (target, that, [url, ...rest]) {
       url = replacedUrl(url);
       return Reflect.apply(target, that, [url, ...rest]);
     },
   });
-
   window.XMLHttpRequest = new Proxy(XMLHttpRequest, {
     construct: function (target, args) {
       // @ts-expect-error A spread argument must either have a tuple type or be passed to a rest parameter.
@@ -121,25 +101,20 @@ const customScript = () => {
     },
   });
 };
-
 const customStyle = `
   .notion-topbar > div > div:nth-child(3) > div > div:nth-child(2), .notion-topbar > div > div:nth-child(3) > div > div:nth-child(3) { 
     display:none !important;
   }
 `;
-
 function getCustomScript() {
   const js = minify(`(${customScript.toString()})()`).code;
   return `<script>${js}</script>`;
 }
-
 function getCustomStyle() {
   const css = new CleanCSS().minify(customStyle).styles;
   return `<style>${css}</style>`;
 }
-
 const app = express();
-
 app.use(
   proxy(pageDomain, {
     proxyReqOptDecorator: (proxyReqOpts) => {
@@ -178,24 +153,13 @@ app.use(
           ),
         );
       }
-
-      const csp = headers['content-security-policy'] as string;
-      if (csp) {
-        headers['content-security-policy'] = csp.replace(
-          /(?=(script-src|connect-src) )[^;]*/g,
-          '$& https://www.googletagmanager.com https://www.google-analytics.com',
-        );
-      }
-
       return headers;
     },
     userResDecorator: (_proxyRes, proxyResData, userReq) => {
       if (/^\/image[s]?\//.test(userReq.url)) {
         return proxyResData;
       }
-
       let data = proxyResData.toString();
-
       // For investigation
       const keywords: string[] = [
         // 'teV1',
@@ -218,7 +182,6 @@ app.use(
       if (found.length > 0) {
         console.log('[DEBUG]', userReq.url, found);
       }
-
       if (/^\/_assets\/[^/]*\.js$/.test(userReq.url)) {
         data = data.replace(
           /window\.location\.href(?=[^=]|={2,})/g,
@@ -226,14 +189,11 @@ app.use(
         ); // Exclude 'window.locaton.href=' but not 'window.locaton.href=='
       } else {
         // Assume HTML
-        data = data
-          .replace(
-            '</head>',
-            `<script>${ncd}</script>${getCustomScript()}${getCustomStyle()}</head>`,
-          )
-          .replace('</body>', `${ga}</body>`);
+        data = data.replace(
+          '</head>',
+          `<script>${ncd}</script>${getCustomScript()}${getCustomStyle()}</head>`,
+        );
       }
-
       data = data
         // https://aif.notion.so/**      -> /200/aif.notion.so/**
         // https://widget.intercom.io/** -> /200/widget.intercom.io/**
@@ -243,17 +203,14 @@ app.use(
         )
         // Skip Sentry.init()
         .replace(/\w+\.init\({dsn:/, 'return;$&');
-
       return data;
     },
   }),
 );
-
 if (!process.env.VERCEL_REGION && !process.env.NOW_REGION) {
   const port = process.env.PORT || 3000;
   app.listen(port, () =>
     console.log(`Server running at http://localhost:${port}`),
   );
 }
-
 export default app;
